@@ -1,0 +1,8 @@
+[package]
+name = "ham_sdr"
+version = "0.1.0"
+authors = ["William Speirs <bill.speirs@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+libusb = "0.3"

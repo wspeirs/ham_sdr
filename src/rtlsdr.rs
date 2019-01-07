@@ -233,6 +233,26 @@ pub fn init_baseband(dev: &mut DeviceHandle) -> Result<(), USBError> {
         if r == 0x69 { println!("Got a R828D"); }
     }
 
+//    /* initialise GPIOs */
+//    rtlsdr_set_gpio_output(dev, 4);
+//
+//    /* reset tuner before probing */
+//    rtlsdr_set_gpio_bit(dev, 4, 1);
+//    rtlsdr_set_gpio_bit(dev, 4, 0);
+
+    let reg = i2c_read_register(dev, 0xAC, 0x01);
+
+    if let Ok(r) = reg {
+        debug!("REG: {:?}", r);
+        if (r & 0x7F) == 0x56 { println!("Found FCI 2580 tuner"); }
+    }
+
+    let reg = i2c_read_register(dev, 0xC6, 0x00);
+
+    if let Ok(r) = reg {
+        debug!("REG: {:?}", r);
+        if r == 0xA1 { println!("Found Fitipower FC0012 tuner"); }
+    }
 
     Ok( () )
 }

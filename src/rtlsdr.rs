@@ -71,11 +71,44 @@ fn demod_write_register(dev: &DeviceHandle, page: u8, addr: u16, value: &[u8]) -
 
     let ret = dev.write_control(control_out, 0u8, addr, index, value, Duration::from_millis(300));
 
-    debug!("write_register: {:?}", ret);
+    debug!("demod_write_register: {:?}", ret);
 
     demod_read_register(dev, 0x0A, 0x01)?;
 
     ret
+}
+
+fn write_array(dev: &DeviceHandle, block: Block, address: u16, value: &[u8]) -> Result<usize, USBError> {
+    let control_out :u8 = request_type(Direction::Out, RequestType::Vendor, Recipient::Endpoint);
+    let index = ((block as u16) << 8) | 0x10;
+
+    let ret = dev.write_control(control_out, 0, address, index, value, Duration::from_millis(300));
+
+    debug!("write_array: {:?}", ret);
+
+    ret
+}
+
+fn read_array(dev: &DeviceHandle, block: Block, address: u16, data: &mut [u8]) -> Result<usize, USBError> {
+    let control_in :u8 = request_type(Direction::In, RequestType::Vendor, Recipient::Endpoint);
+    let index = (block as u16) << 8;
+
+    let ret = dev.read_control(control_in, 0, address, index, data, Duration::from_millis(300));
+
+    debug!("read_array: {:?}", ret);
+
+    ret
+}
+
+fn i2c_read_register(dev: &DeviceHandle, address: u8, register: u8) -> Result<u8, USBError> {
+    let mut buff = [0x0u8];
+
+    write_array(dev, Block::IIC, address as u16, &[register])?;
+    read_array(dev, Block::IIC, address as u16, &mut buff)?;
+
+    debug!("i2c_read_register: {:?}", buff);
+
+    Ok(buff[0])
 }
 
 /// Sets the finite impulse response (FIR) of the device
@@ -168,6 +201,38 @@ pub fn init_baseband(dev: &mut DeviceHandle) -> Result<(), USBError> {
 
     // disable 4.096 MHz clock output on pin TP_CK0
     demod_write_register(dev, 0, 0x0d, &[0x83])?;
+
+    // probe tuners
+    demod_write_register(dev, 1, 0x01, &[0x18]);
+
+    // check for E4K
+    let reg = i2c_read_register(dev, 0xC8, 0x02);
+
+    if let Ok(r) = reg {
+        if r == 0x40 { println!("Got a E4K"); }
+    }
+
+    // check for FC0013
+    let reg = i2c_read_register(dev, 0xC6, 0x00);
+
+    if let Ok(r) = reg {
+        if r == 0xA3 { println!("Got a FC0013"); }
+    }
+
+    // check for R820T
+    let reg = i2c_read_register(dev, 0x34, 0x00);
+
+    if let Ok(r) = reg {
+        if r == 0x69 { println!("Got a R820T"); }
+    }
+
+    // check for R828D
+    let reg = i2c_read_register(dev, 0x74, 0x00);
+
+    if let Ok(r) = reg {
+        if r == 0x69 { println!("Got a R828D"); }
+    }
+
 
     Ok( () )
 }

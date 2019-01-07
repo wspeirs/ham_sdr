@@ -45,6 +45,8 @@ fn main() -> Result<(), USBError> {
     //
     rtlsdr::init_baseband(&mut device_handle).expect("Error setting the baseband");
 
+//    rtlsdr_set_i2c_repeater(dev, 1);
+
 
     Ok(())
 }

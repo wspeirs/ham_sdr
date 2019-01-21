@@ -167,6 +167,7 @@ dependencies = [
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "num 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rs-libhackrf 0.1.0",
+ "sdr 0.7.0",
  "simple_logger 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -370,6 +371,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "scopeguard"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "sdr"
+version = "0.7.0"
+dependencies = [
+ "num 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "simple_logger"

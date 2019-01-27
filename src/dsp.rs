@@ -4,7 +4,7 @@ use std::iter::Iterator;
 use num::complex::Complex32;
 
 
-struct FMQuadratureDemodulate {
+pub struct FMQuadratureDemodulate {
     last: Option<Complex32>
 }
 

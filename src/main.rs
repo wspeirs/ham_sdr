@@ -22,6 +22,8 @@ use rs_libhackrf::error::Error;
 
 mod dsp;
 
+use dsp::FMQuadratureDemodulate;
+
 const FREQ :u64 = 95_900_000; // set to 95.9MHz
 const SAMPLE_RATE :u32 = 10_000_000;
 
@@ -43,11 +45,11 @@ fn main() -> Result<(), Error> {
 
     let mut test_file = BufWriter::new(OpenOptions::new().write(true).create(true).open("test.dat").expect("Cannot open phase file"));
 
-    let mut low_pass_fir :FIR<Complex32> = FIR::lowpass(2409, 0.02); // cut off / (sample/2)
-    let mut decimation_fir = FIR::new(low_pass_fir.taps(), 20, 1);
-    let mut resample_fir = FIR::resampler(4103, 500, 96);
+//    let mut low_pass_fir :FIR<Complex32> = FIR::lowpass(2409, 0.02); // cut off / (sample/2)
+//    let mut decimation_fir = FIR::new(low_pass_fir.taps(), 20, 1);
+//    let mut resample_fir = FIR::resampler(4103, 500, 96);
 
-    let mut fm_demod = FMDemod::new();
+    let mut fm_demod = FMQuadratureDemodulate::new();
 
     dev.start_rx(|buff| {
         //
@@ -57,18 +59,17 @@ fn main() -> Result<(), Error> {
             Complex32::new(chunk[0] as f32 / 128.0, chunk[1] as f32 / 128.0)
         }).collect::<Vec<_>>();
 
-        buff.iter().for_each(|b| {
-            test_file.write_f32::<LE>(b.re);
-            test_file.write_f32::<LE>(b.im);
-        });
-
-        test_file.flush();
+//        buff.iter().for_each(|b| {
+//            test_file.write_f32::<LE>(b.re);
+//            test_file.write_f32::<LE>(b.im);
+//        });
+//        test_file.flush();
 
 
         //
         // low-pass filter, and decimation
         //
-        let buff = decimation_fir.process(&buff);
+//        let buff = decimation_fir.process(&buff);
 
 //        buff.iter().for_each(|c| {
 //            test_file.write_f32::<LE>(c.re);
@@ -78,26 +79,21 @@ fn main() -> Result<(), Error> {
 //        test_file.flush();
 
         // demodulation
-        let res = fm_demod.process(&buff);
+        let res = fm_demod.demodulate(&buff);
 
-//        f64::atan2();
-
-//        res.iter().for_each(|f| {
-//            test_file.write_f32::<LE>(*f);
-//        });
-//
-//        test_file.flush();
-
-        // re-sample
-        let res = resample_fir.process(&res);
-
-        res.iter().for_each(|r| {
-//            std_out.write_f32::<LE>(*r);
-            test_file.write_f32::<LE>(*r);
+        res.iter().for_each(|f| {
+            test_file.write_f32::<LE>(*f);
         });
 
-//        std_out.flush();
         test_file.flush();
+
+        // re-sample
+//        let res = resample_fir.process(&res);
+//
+//        res.iter().for_each(|r| {
+//            test_file.write_f32::<LE>(*r);
+//        });
+//        test_file.flush();
 
         Error::SUCCESS
     })?;

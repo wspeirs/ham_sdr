@@ -20,6 +20,8 @@ use sdr::fm::FMDemod;
 use rs_libhackrf::hackrf::HackRF;
 use rs_libhackrf::error::Error;
 
+mod dsp;
+
 const FREQ :u64 = 95_900_000; // set to 95.9MHz
 const SAMPLE_RATE :u32 = 10_000_000;
 
@@ -48,20 +50,24 @@ fn main() -> Result<(), Error> {
     let mut fm_demod = FMDemod::new();
 
     dev.start_rx(|buff| {
-        let mut std_out = stdout();
-
-//        buff.iter().for_each(|b| {
-//            test_file.write_u8(*b);
-//        });
-//
-//        test_file.flush();
-
+        //
         // convert from 8-bit IQ to complex values
+        //
         let buff = buff.chunks(2).map(|chunk| {
             Complex32::new(chunk[0] as f32 / 128.0, chunk[1] as f32 / 128.0)
         }).collect::<Vec<_>>();
 
+        buff.iter().for_each(|b| {
+            test_file.write_f32::<LE>(b.re);
+            test_file.write_f32::<LE>(b.im);
+        });
+
+        test_file.flush();
+
+
+        //
         // low-pass filter, and decimation
+        //
         let buff = decimation_fir.process(&buff);
 
 //        buff.iter().for_each(|c| {
@@ -73,6 +79,8 @@ fn main() -> Result<(), Error> {
 
         // demodulation
         let res = fm_demod.process(&buff);
+
+//        f64::atan2();
 
 //        res.iter().for_each(|f| {
 //            test_file.write_f32::<LE>(*f);

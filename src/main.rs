@@ -25,7 +25,7 @@ mod dsp;
 use dsp::FMQuadratureDemodulate;
 
 const FREQ :u64 = 95_900_000; // set to 95.9MHz
-const SAMPLE_RATE :u32 = 10_000_000;
+const SAMPLE_RATE :f64 = 10_000_000.0;
 
 fn main() -> Result<(), Error> {
 //    simple_logger::init_with_level(log::Level::Debug).unwrap();
@@ -34,14 +34,15 @@ fn main() -> Result<(), Error> {
     let mut hrf = HackRF::new().unwrap();
     let mut dev = hrf.open_device(0).expect("Error opening device; not plugged in?");
 
-    dev.set_vga_gain(20)?;
-    dev.set_lna_gain(20)?;
-    dev.set_amp_enable(false);
+    dev.set_vga_gain(15)?;
+    dev.set_lna_gain(15)?;
+    dev.set_amp_enable(true);
+    dev.set_baseband_filter_bandwidth(0);
 
     dev.set_antenna_enable(true);
 
     dev.set_freq(FREQ)?;
-    dev.set_sample_rate(SAMPLE_RATE as f64)?;
+    dev.set_sample_rate(SAMPLE_RATE)?;
 
     let mut test_file = BufWriter::new(OpenOptions::new().write(true).create(true).open("test.dat").expect("Cannot open phase file"));
 
@@ -51,19 +52,33 @@ fn main() -> Result<(), Error> {
 
     let mut fm_demod = FMQuadratureDemodulate::new();
 
+    let mut lookup_table = Vec::with_capacity(65536);
+
+    for i in 0..0x1_0000 {
+        lookup_table.push(Complex32::new(
+            ((i & 0xFF) as i8) as f32 * (1.0f32 / 128.0f32),
+            ((i >> 8) as i8) as f32 * (1.0f32 / 128.0f32)
+        ));
+    }
+
     dev.start_rx(|buff| {
         //
         // convert from 8-bit IQ to complex values
         //
-        let buff = buff.chunks(2).map(|chunk| {
-            Complex32::new(chunk[0] as f32 / 128.0, chunk[1] as f32 / 128.0)
+        let buff = buff.chunks(2).map(|n| {
+            let mut i :u16 = n[1] as u16;
+
+            i <<= 8;
+            i += n[0] as u16;
+
+            lookup_table.get(i as usize).expect(&format!("Got value without lookup: {}", i))
         }).collect::<Vec<_>>();
 
-//        buff.iter().for_each(|b| {
-//            test_file.write_f32::<LE>(b.re);
-//            test_file.write_f32::<LE>(b.im);
-//        });
-//        test_file.flush();
+        buff.iter().for_each(|b| {
+            test_file.write_f32::<LE>(b.re);
+            test_file.write_f32::<LE>(b.im);
+        });
+        test_file.flush();
 
 
         //
@@ -78,14 +93,14 @@ fn main() -> Result<(), Error> {
 //
 //        test_file.flush();
 
-        // demodulation
-        let res = fm_demod.demodulate(&buff);
-
-        res.iter().for_each(|f| {
-            test_file.write_f32::<LE>(*f);
-        });
-
-        test_file.flush();
+//        // demodulation
+//        let res = fm_demod.demodulate(&buff);
+//
+//        res.iter().for_each(|f| {
+//            test_file.write_f32::<LE>(*f);
+//        });
+//
+//        test_file.flush();
 
         // re-sample
 //        let res = resample_fir.process(&res);
@@ -98,7 +113,9 @@ fn main() -> Result<(), Error> {
         Error::SUCCESS
     })?;
 
-    sleep(Duration::from_secs(3));
+    sleep(Duration::from_secs(5));
+    dev.stop_rx();
+    sleep(Duration::from_millis(10));
 
     Ok(())
 }
@@ -107,17 +124,32 @@ fn main() -> Result<(), Error> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::io::BufReader;
+    use byteorder::{LE, ReadBytesExt};
 
     #[test]
-    fn test_zip() {
-        let buff = (0..20).collect::<Vec<u8>>();
+    fn test_read() {
+        let mut my_file = BufReader::new(OpenOptions::new().read(true).create(false).open("test.dat").expect("Cannot open phase file"));
+        let mut gr_file = BufReader::new(OpenOptions::new().read(true).create(false).open("gnu_radio.dat").expect("Cannot open phase file"));
 
-        let i = buff.iter().step_by(2).map(|n| *n);
-        let q = buff.iter().skip(1).step_by(2).map(|n| *n);
-
-        for (i,q) in i.zip(q) {
-            println!("I: {} Q: {}", i, q);
+        for _ in 0..100 {
+            println!("{:0.04} {:0.04}\t\t{:0.04} {:0.04}", my_file.read_f32::<LE>().unwrap(), my_file.read_f32::<LE>().unwrap(), gr_file.read_f32::<LE>().unwrap(), gr_file.read_f32::<LE>().unwrap());
         }
+    }
+
+    #[test]
+    fn test_lut() {
+        let buff :Vec<u8> = vec![0x00, 0x01, 0x02, 0x03];
+
+        for i in buff.chunks(2) {
+            let mut s = i[1] as u16;
+
+            s <<= 8;
+            s += i[0] as u16;
+
+            println!("{:x}", s);
+        }
+
     }
 
 }

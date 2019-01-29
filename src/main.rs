@@ -8,7 +8,7 @@ use std::thread::sleep;
 use std::io::{Write, stdout, BufWriter};
 use std::fs::{File, OpenOptions};
 
-use byteorder::{LE, WriteBytesExt};
+use byteorder::{LE, BE, WriteBytesExt};
 
 use std::f32::consts::PI;
 
@@ -34,15 +34,19 @@ fn main() -> Result<(), Error> {
     let mut hrf = HackRF::new().unwrap();
     let mut dev = hrf.open_device(0).expect("Error opening device; not plugged in?");
 
-    dev.set_vga_gain(15)?;
-    dev.set_lna_gain(15)?;
-    dev.set_amp_enable(true);
-    dev.set_baseband_filter_bandwidth(0);
-
-    dev.set_antenna_enable(true);
-
     dev.set_freq(FREQ)?;
     dev.set_sample_rate(SAMPLE_RATE)?;
+
+    dev.set_vga_gain(15)?;
+    dev.set_lna_gain(20)?;
+
+    dev.set_amp_enable(true);
+    dev.set_antenna_enable(true);
+
+    let bb_bw = dev.compute_baseband_filter_bandwidth((0.75 * SAMPLE_RATE) as u32);
+    dev.set_baseband_filter_bandwidth(bb_bw);
+
+    println!("BB BW: {}", bb_bw);
 
     let mut test_file = BufWriter::new(OpenOptions::new().write(true).create(true).open("test.dat").expect("Cannot open phase file"));
 
@@ -52,34 +56,12 @@ fn main() -> Result<(), Error> {
 
     let mut fm_demod = FMQuadratureDemodulate::new();
 
-    let mut lookup_table = Vec::with_capacity(65536);
+    dev.start_rx(|iq| {
 
-    for i in 0..0x1_0000 {
-        lookup_table.push(Complex32::new(
-            ((i & 0xFF) as i8) as f32 * (1.0f32 / 128.0f32),
-            ((i >> 8) as i8) as f32 * (1.0f32 / 128.0f32)
-        ));
-    }
-
-    dev.start_rx(|buff| {
-        //
-        // convert from 8-bit IQ to complex values
-        //
-        let buff = buff.chunks(2).map(|n| {
-            let mut i :u16 = n[1] as u16;
-
-            i <<= 8;
-            i += n[0] as u16;
-
-            lookup_table.get(i as usize).expect(&format!("Got value without lookup: {}", i))
-        }).collect::<Vec<_>>();
-
-        buff.iter().for_each(|b| {
+        iq.iter().for_each(|b| {
             test_file.write_f32::<LE>(b.re);
             test_file.write_f32::<LE>(b.im);
         });
-        test_file.flush();
-
 
         //
         // low-pass filter, and decimation
@@ -116,6 +98,8 @@ fn main() -> Result<(), Error> {
     sleep(Duration::from_secs(5));
     dev.stop_rx();
     sleep(Duration::from_millis(10));
+
+    test_file.flush();
 
     Ok(())
 }

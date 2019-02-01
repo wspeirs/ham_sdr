@@ -15,6 +15,7 @@ impl QuadratureDemodulator {
     }
 
     /// Generates the taps for a low-pass filter
+    /// Translated from https://github.com/gnuradio/gnuradio/blob/v3.7.9.3/gr-filter/lib/firdes.cc#L92
     pub fn generate_low_pass_taps(gain :f32, sampling_freq :f32, cutoff_freq :f32, transition_width :f32) -> Vec<f32> {
         // perform some sanity checks
         assert!(sampling_freq > 0.0, format!("sampling_freq ({}) < 0", sampling_freq));
@@ -188,8 +189,7 @@ mod test {
     fn test_generate_low_pass_taps() {
         let taps = QuadratureDemodulator::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
 
-        for tap in taps {
-            println!("{}", tap);
-        }
+        assert_eq!(*taps.first().unwrap(), 0.00000526322);
+        assert_eq!(*taps.last().unwrap(), 0.00000526322);
     }
 }

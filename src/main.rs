@@ -22,7 +22,7 @@ use rs_libhackrf::error::Error;
 
 mod dsp;
 
-use dsp::FMQuadratureDemodulate;
+use dsp::QuadratureDemodulator;
 
 const FREQ :u64 = 95_900_000; // set to 95.9MHz
 const SAMPLE_RATE :f64 = 10_000_000.0;
@@ -54,7 +54,7 @@ fn main() -> Result<(), Error> {
 //    let mut decimation_fir = FIR::new(low_pass_fir.taps(), 20, 1);
 //    let mut resample_fir = FIR::resampler(4103, 500, 96);
 
-    let mut fm_demod = FMQuadratureDemodulate::new();
+    let mut fm_demod = QuadratureDemodulator::new();
 
     dev.start_rx(|iq| {
 

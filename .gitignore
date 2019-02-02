@@ -2,3 +2,4 @@
 **/*.rs.bk
 .idea/
 *.dat
+c_test/*.o

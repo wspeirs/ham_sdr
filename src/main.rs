@@ -17,9 +17,11 @@ use num::complex::Complex32;
 use rs_libhackrf::hackrf::HackRF;
 use rs_libhackrf::error::Error;
 
-mod dsp;
+mod modulation;
+mod filter;
 
-use dsp::QuadratureDemodulator;
+use modulation::QuadratureDemodulator;
+use filter::Filter;
 
 const FREQ :u64 = 95_900_000; // set to 95.9MHz
 const SAMPLE_RATE :f64 = 10_000_000.0;
@@ -46,20 +48,21 @@ fn main() -> Result<(), Error> {
     let mut test_file = BufWriter::new(OpenOptions::new().write(true).create(true).truncate(true).open("test.dat").expect("Cannot open phase file"));
     let mut iq_file = BufReader::new(OpenOptions::new().read(true).create(false).open("iq.dat").expect("Cannot open IQ file"));
 
-    let mut fm_demod = QuadratureDemodulator::new();
-    let taps = QuadratureDemodulator::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
+//    let mut fm_demod = QuadratureDemodulator::new();
+    let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
+    let filter = Filter::new(&taps);
 
     loop {
         let mut iq = Vec::<Complex32>::with_capacity(22_000);
 
-        for _ in 0..22_000 {
+        for _ in 0..131_072 {
             let r = iq_file.read_f32::<LE>().unwrap();
             let i = iq_file.read_f32::<LE>().unwrap();
 
             iq.push(Complex32::new(r, i));
         }
 
-        let output = QuadratureDemodulator::fir_filter(&iq, &taps, 20);
+        let output = filter.filter(20, &iq);
 
         output.iter().for_each(|c| {
             test_file.write_f32::<LE>(c.re);

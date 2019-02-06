@@ -5,17 +5,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 use std::thread::sleep;
-use std::io::{Write, stdout, BufWriter};
+use std::io::{Write, Read, stdout, BufWriter, BufReader};
 use std::fs::{File, OpenOptions};
 
-use byteorder::{LE, BE, WriteBytesExt};
+use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 
 use std::f32::consts::PI;
 
 use num::complex::Complex32;
-
-use sdr::fir::FIR;
-use sdr::fm::FMDemod;
 
 use rs_libhackrf::hackrf::HackRF;
 use rs_libhackrf::error::Error;
@@ -46,36 +43,53 @@ fn main() -> Result<(), Error> {
     let bb_bw = dev.compute_baseband_filter_bandwidth((0.75 * SAMPLE_RATE) as u32);
     dev.set_baseband_filter_bandwidth(bb_bw);
 
-    println!("BB BW: {}", bb_bw);
-
-    let mut test_file = BufWriter::new(OpenOptions::new().write(true).create(true).open("test.dat").expect("Cannot open phase file"));
-
-//    let mut low_pass_fir :FIR<Complex32> = FIR::lowpass(2409, 0.02); // cut off / (sample/2)
-//    let mut decimation_fir = FIR::new(low_pass_fir.taps(), 20, 1);
-//    let mut resample_fir = FIR::resampler(4103, 500, 96);
+    let mut test_file = BufWriter::new(OpenOptions::new().write(true).create(true).truncate(true).open("test.dat").expect("Cannot open phase file"));
+    let mut iq_file = BufReader::new(OpenOptions::new().read(true).create(false).open("iq.dat").expect("Cannot open IQ file"));
 
     let mut fm_demod = QuadratureDemodulator::new();
+    let taps = QuadratureDemodulator::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
 
+    loop {
+        let mut iq = Vec::<Complex32>::with_capacity(22_000);
+
+        for _ in 0..22_000 {
+            let r = iq_file.read_f32::<LE>().unwrap();
+            let i = iq_file.read_f32::<LE>().unwrap();
+
+            iq.push(Complex32::new(r, i));
+        }
+
+        let output = QuadratureDemodulator::fir_filter(&iq, &taps, 20);
+
+        output.iter().for_each(|c| {
+            test_file.write_f32::<LE>(c.re);
+            test_file.write_f32::<LE>(c.im);
+        });
+
+        test_file.flush();
+    }
+
+/*
     dev.start_rx(|iq| {
 
-        iq.iter().for_each(|b| {
-            test_file.write_f32::<LE>(b.re);
-            test_file.write_f32::<LE>(b.im);
-        });
+//        iq.iter().for_each(|b| {
+//            test_file.write_f32::<LE>(b.re);
+//            test_file.write_f32::<LE>(b.im);
+//        });
 
         //
         // low-pass filter, and decimation
         //
-//        let buff = decimation_fir.process(&buff);
+        let output = QuadratureDemodulator::fir_filter(iq, &taps, 20);
 
-//        buff.iter().for_each(|c| {
-//            test_file.write_f32::<LE>(c.re);
-//            test_file.write_f32::<LE>(c.im);
-//        });
-//
-//        test_file.flush();
+        output.iter().for_each(|c| {
+            test_file.write_f32::<LE>(c.re);
+            test_file.write_f32::<LE>(c.im);
+        });
 
-//        // demodulation
+        //
+        // demodulation
+        //
 //        let res = fm_demod.demodulate(&buff);
 //
 //        res.iter().for_each(|f| {
@@ -100,7 +114,7 @@ fn main() -> Result<(), Error> {
     sleep(Duration::from_millis(10));
 
     test_file.flush();
-
+*/
     Ok(())
 }
 

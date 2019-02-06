@@ -211,7 +211,6 @@ dependencies = [
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "num 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rs-libhackrf 0.1.0",
- "sdr 0.7.0",
  "simple_logger 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -459,13 +458,6 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-name = "sdr"
-version = "0.7.0"
-dependencies = [
- "num 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "simple_logger"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -592,6 +584,10 @@ dependencies = [
  "winapi 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi-util 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[patch.unused]]
+name = "sdr"
+version = "0.7.0"
 
 [metadata]
 "checksum aho-corasick 0.6.9 (registry+https://github.com/rust-lang/crates.io-index)" = "1e9a933f4e58658d7b12defcf96dc5c720f20832deebe3e0a19efd3b6aaeeb9e"

@@ -152,11 +152,11 @@
     </param>
     <param>
       <key>file</key>
-      <value>/home/wspeirs/src/ham_sdr/ones_low_pass.dat</value>
+      <value>/home/wspeirs/src/ham_sdr/test.dat</value>
     </param>
     <param>
       <key>_coordinate</key>
-      <value>(600, 110)</value>
+      <value>(632, 150)</value>
     </param>
     <param>
       <key>_rotation</key>
@@ -195,7 +195,7 @@
     </param>
     <param>
       <key>_enabled</key>
-      <value>1</value>
+      <value>0</value>
     </param>
     <param>
       <key>file</key>
@@ -258,11 +258,11 @@
     </param>
     <param>
       <key>decim</key>
-      <value>103</value>
+      <value>20</value>
     </param>
     <param>
       <key>_enabled</key>
-      <value>True</value>
+      <value>0</value>
     </param>
     <param>
       <key>type</key>
@@ -270,7 +270,7 @@
     </param>
     <param>
       <key>_coordinate</key>
-      <value>(336, 82)</value>
+      <value>(376, 122)</value>
     </param>
     <param>
       <key>_rotation</key>
@@ -1609,7 +1609,7 @@
     </param>
     <param>
       <key>_enabled</key>
-      <value>0</value>
+      <value>1</value>
     </param>
     <param>
       <key>_coordinate</key>
@@ -1756,7 +1756,7 @@
     </param>
     <param>
       <key>_coordinate</key>
-      <value>(552, 517)</value>
+      <value>(536, 389)</value>
     </param>
     <param>
       <key>_rotation</key>
@@ -1920,7 +1920,7 @@
   </connection>
   <connection>
     <source_block_id>osmosdr_source_0</source_block_id>
-    <sink_block_id>wxgui_fftsink2_0</sink_block_id>
+    <sink_block_id>blocks_file_sink_0</sink_block_id>
     <source_key>0</source_key>
     <sink_key>0</sink_key>
   </connection>

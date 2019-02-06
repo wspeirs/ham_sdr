@@ -1,5 +1,5 @@
 use num::complex::Complex32;
-use std::f32::consts::PI;
+use std::f64::consts::PI;
 
 
 pub struct Filter {
@@ -9,7 +9,7 @@ pub struct Filter {
 impl Filter {
     /// Generates the taps for a low-pass filter
     /// Translated from https://github.com/gnuradio/gnuradio/blob/v3.7.9.3/gr-filter/lib/firdes.cc#L92
-    pub fn generate_low_pass_taps(gain :f32, sampling_freq :f32, cutoff_freq :f32, transition_width :f32) -> Vec<f32> {
+    pub fn generate_low_pass_taps(gain :f64, sampling_freq :f64, cutoff_freq :f64, transition_width :f64) -> Vec<f32> {
         // perform some sanity checks
         assert!(sampling_freq > 0.0, format!("sampling_freq ({}) < 0", sampling_freq));
         assert!(cutoff_freq > 0.0, format!("cutoff_freq ({}) <= 0", cutoff_freq));
@@ -17,7 +17,7 @@ impl Filter {
         assert!(transition_width > 0.0, format!("transition_width <= 0"));
 
         // we're using a Hamming window
-        const MAX_ATTENUATION :f32 = 53.0;
+        const MAX_ATTENUATION :f64 = 53.0;
 
         let ntaps = (MAX_ATTENUATION * sampling_freq / (22.0 * transition_width)).floor() as isize;
         let ntaps  = if (ntaps & 1) == 0 { ntaps + 1 } else { ntaps };
@@ -25,40 +25,45 @@ impl Filter {
         // construct the truncated ideal impulse response
         // [sin(x)/x for the low pass case]
 
-        let mut window = Vec::with_capacity(ntaps as usize);
+        let mut window :Vec<f32> = Vec::with_capacity(ntaps as usize);
+        let M = (ntaps - 1) as f64;
 
         // compute the window values
         for n in 0..ntaps {
-            window.push(0.54 - 0.46 * ((2.0 * PI * n as f32) / (ntaps - 1) as f32).cos());
+//            println!("{:0.20} - {:0.20} * (({:0.20}) / {:0.20}).cos()", 0.54, 0.46, (2.0 * PI * n as f64), M);
+//            println!("{:0.20}", 2.0_f64 * PI_64 * n as f64);
+//            println!("({:0.20}).cos() = {:0.20}", (2.0_f64 * PI * n as f64) / M as f64, ((2.0_f64 * PI * n as f64) / M as f64).cos());
+//            println!("{:0.20}", 0.54 - 0.46 * ((2.0_f64 * PI * n as f64) / M as f64).cos());
+            window.push((0.54 - 0.46 * ((2.0 * PI * n as f64) / M).cos()) as f32);
         }
 
         let M :isize = (ntaps - 1) / 2;
         let fw_t0 = 2.0 * PI * cutoff_freq / sampling_freq;
 
-        let mut taps = vec![0.0; ntaps as usize];
+        let mut taps :Vec<f32> = vec![0.0; ntaps as usize];
 
         // compute the tap values
         for n in -M..=M {
             if n == 0 {
-                taps[(n+M) as usize] = fw_t0 / PI * window[(n+M) as usize];
+                taps[(n+M) as usize] = (fw_t0 / PI * window[(n+M) as usize] as f64) as f32;
             } else {
-                taps[(n+M) as usize] = (n as f32 * fw_t0).sin() / (n as f32 * PI) * window[(n+M) as usize];
+                taps[(n+M) as usize] = ((n as f64 * fw_t0).sin() / (n as f64 * PI) * window[(n+M) as usize] as f64) as f32;
             }
         }
 
         // find the factor to normalize the gain, fmax.
         // For low-pass, gain @ zero freq = 1.0
 
-        let mut fmax = taps[0 + M as usize];
+        let mut fmax = taps[0 + M as usize] as f64;
 
         for n in 1..= M {
-            fmax += 2.0 * taps[(n + M) as usize];
+            fmax += 2.0 * taps[(n + M) as usize] as f64;
         }
 
         let gain = gain / fmax;	// normalize
 
         for i in 0..ntaps as usize {
-            taps[i] *= gain;
+            taps[i] = (taps[i] as f64 * gain) as f32;
         }
 
         return taps;
@@ -99,12 +104,34 @@ impl Filter {
 mod test {
     use super::*;
     use num::complex::Complex32;
+    use std::io::{Read, Write, BufReader, BufWriter};
+    use std::fs::{File, OpenOptions};
+    use byteorder::{LE, BE, WriteBytesExt, ReadBytesExt};
 
     #[test]
     fn test_generate_low_pass_taps() {
         let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
+        let mut taps_file = BufReader::new(OpenOptions::new().read(true).create(false).open("taps.dat").expect("Cannot open taps.dat file"));
 
-        assert_eq!(*taps.first().unwrap(), 0.00000526322);
+//        taps.iter().for_each(|t| println!("T: {:0.20}", t));
+
+        let mut i = 0;
+
+        loop {
+            let ftap = taps_file.read_f32::<LE>();
+
+            if ftap.is_err() {
+                break;
+            }
+
+            let ftap = ftap.unwrap();
+
+            println!("{}: {}", i, taps[i] - ftap);
+
+            i += 1;
+        }
+
+        assert_eq!(*taps.first().unwrap(), 0.0000052632);
         assert_eq!(*taps.last().unwrap(), 0.00000526322);
     }
 

@@ -3,3 +3,4 @@
 .idea/
 *.dat
 c_test/*.o
+c_test/test

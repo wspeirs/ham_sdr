@@ -2,5 +2,6 @@
 **/*.rs.bk
 .idea/
 *.dat
-c_test/*.o
-c_test/test
+c_tests/*.o
+c_tests/test
+c_tests/read_floats

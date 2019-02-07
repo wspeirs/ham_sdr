@@ -1,4 +1,4 @@
-use num::complex::Complex32;
+use num::complex::{Complex32, Complex64};
 use std::f64::consts::PI;
 
 
@@ -70,10 +70,26 @@ impl Filter {
     }
 
     pub fn new(taps: &[f32]) -> Filter {
-        let mut t = Vec::<f32>::with_capacity(taps.len());
-        t.extend_from_slice(taps);
+        let mut r_taps = Vec::<f32>::with_capacity(taps.len());
 
-        return Filter { taps: t }
+        // we want to reverse the taps so it's easier to manage in the filter code
+        taps.iter().rev().for_each(|t| r_taps.push(*t));
+
+//        r_taps.extend_from_slice(taps);
+
+        return Filter { taps: r_taps }
+    }
+
+    fn dot_product(input: &[Complex32], taps: &[f32]) -> Complex32 {
+        assert_eq!(input.len(), taps.len());
+
+        let f = |acc :(f32,f32), (i, t) :(&Complex32, &f32)| (i.re.mul_add(*t, acc.0), i.im.mul_add(*t, acc.1));
+
+        let (r,i) = input.iter()
+            .zip(taps.iter())
+            .fold((0.0, 0.0), f );
+
+        return Complex32::new(r,i);
     }
 
     pub fn filter(&self, decimation: usize, input: &[Complex32]) -> Vec<Complex32> {
@@ -82,17 +98,12 @@ impl Filter {
         let stop = (input.len() / decimation) * decimation;
 
         for n in (0..stop).step_by(decimation) {
-            let mut real: f64 = 0.0;
-            let mut img: f64 = 0.0;
+            let i_start = if n >= self.taps.len() { n - (self.taps.len()-1) } else { 0 };
+            let t_start = (self.taps.len()-1) - n;
 
-            let start = if n >= self.taps.len() { n - (self.taps.len()-1) } else { 0 };
+            let c = Filter::dot_product(&input[i_start..=n], &self.taps[t_start..]);
 
-            for k in start..=n {
-                real += input[k].re as f64 * self.taps[n-k] as f64;
-                img += input[k].im as f64 * self.taps[n-k] as f64;
-            }
-
-            ret.push(Complex32::new(real as f32, img as f32));
+            ret.push(c);
         }
 
         ret
@@ -112,8 +123,9 @@ mod test {
     fn test_generate_low_pass_taps() {
         let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
         let mut taps_file = BufReader::new(OpenOptions::new().read(true).create(false).open("taps.dat").expect("Cannot open taps.dat file"));
+        let mut my_file = BufWriter::new(OpenOptions::new().write(true).create(true).truncate(true).open("my_taps.dat").expect("Cannot open phase file"));
 
-//        taps.iter().for_each(|t| println!("T: {:0.20}", t));
+        taps.iter().for_each(|t| my_file.write_f32::<LE>(*t).unwrap());
 
         let mut i = 0;
 
@@ -126,42 +138,103 @@ mod test {
 
             let ftap = ftap.unwrap();
 
-            println!("{}: {}", i, taps[i] - ftap);
+            assert_eq!(taps[i], ftap);
 
             i += 1;
         }
-
-        assert_eq!(*taps.first().unwrap(), 0.0000052632);
-        assert_eq!(*taps.last().unwrap(), 0.00000526322);
     }
 
     #[test]
-    fn test_low_pass() {
-        let input = vec![Complex32::new(1.0, 1.0); 100];
+    fn test_low_pass_iq() {
+        let mut iq_file = BufReader::new(OpenOptions::new().read(true).create(false).open("iq_10000.dat").expect("Cannot open iq.dat file"));
+        let mut input = Vec::<Complex32>::new();
 
+        loop {
+            let r = iq_file.read_f32::<LE>();
+
+            if r.is_err() {
+                break;
+            }
+
+            let r = r.unwrap();
+            let i = iq_file.read_f32::<LE>().unwrap();
+
+            input.push(Complex32::new(r, i));
+        }
+
+        let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
+        let filter = Filter::new(&taps);
+        let output = filter.filter(20, &input);
+
+//        assert_eq!(output.len(), 100);
+
+        assert_eq!(output[0].re, 0.00000468754569737939);
+        assert_eq!(output[0].im, -0.00000111020824533625);
+
+        assert_eq!(output[1].re, -0.00011307443492114544);
+        assert_eq!(output[1].im, 0.00004673069997807033);
+
+        assert_eq!(output[2].re, -0.00041445155511610210);
+        assert_eq!(output[2].im, 0.00015367753803730011);
+
+        assert_eq!(output[97].re, 1.00110352039337158203);
+        assert_eq!(output[97].im, 1.00110352039337158203);
+
+        assert_eq!(output[98].re, 1.00072109699249267578);
+        assert_eq!(output[98].im, 1.00072109699249267578);
+
+        assert_eq!(output[99].re, 1.00053107738494873047);
+        assert_eq!(output[99].im, 1.00053107738494873047);
+    }
+
+    #[test]
+    fn test_low_pass_ones() {
+        let mut in_file = BufReader::new(OpenOptions::new().read(true).create(false).open("ones_low_pass.dat").expect("Cannot open file"));
+        let mut file_output = Vec::<Complex32>::new();
+
+        loop {
+            let r = in_file.read_f32::<LE>();
+
+            if r.is_err() {
+                break;
+            }
+
+            let r = r.unwrap();
+            let i = in_file.read_f32::<LE>().unwrap();
+
+            file_output.push(Complex32::new(r, i));
+        }
+
+        let input = vec![Complex32::new(1.0, 1.0); 100];
         let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
         let filter = Filter::new(&taps);
         let output = filter.filter(1, &input);
 
         assert_eq!(output.len(), 100);
 
-        assert_eq!(output[0].re, 0.00000526322);
-        assert_eq!(output[0].im, 0.00000526322);
+        for i in 0..100 {
+            assert_eq!(output[i].re as f32, file_output[i].re, "Mismatch at {}: {:0.20} != {:0.20}", i, output[i].re, file_output[i].re);
+            assert_eq!(output[i].im as f32, file_output[i].im, "Mismatch at {}: {:0.20} != {:0.20}", i, output[i].im, file_output[i].im);
+            println!("{:0.20} {:0.20}", output[i].re, file_output[i].re)
+        }
 
-        assert_eq!(output[1].re, 0.000009232372);
-        assert_eq!(output[1].im, 0.000009232372);
-
-        assert_eq!(output[2].re, 0.000011889521);
-        assert_eq!(output[2].im, 0.000011889521);
-
-        assert_eq!(output[3].re, 0.000013222045);
-        assert_eq!(output[3].im, 0.000013222045);
-
-        assert_eq!(output[4].re, 0.000013222048);
-        assert_eq!(output[4].im, 0.000013222048);
-
-        assert_eq!(output[99].re, 0.00010319796);
-        assert_eq!(output[99].im, 0.00010319796);
+//        assert_eq!(output[0].re, 0.00000526320945937186);
+//        assert_eq!(output[0].im, 0.00000526320945937186);
+//
+//        assert_eq!(output[1].re, 0.00012048177450196818);
+//        assert_eq!(output[1].im, 0.00012048177450196818);
+//
+//        assert_eq!(output[2].re, 0.00039262371137738228);
+//        assert_eq!(output[2].im, 0.00039262371137738228);
+//
+//        assert_eq!(output[97].re, 1.00110352039337158203);
+//        assert_eq!(output[97].im, 1.00110352039337158203);
+//
+//        assert_eq!(output[98].re, 1.00072109699249267578);
+//        assert_eq!(output[98].im, 1.00072109699249267578);
+//
+//        assert_eq!(output[99].re, 1.00053107738494873047);
+//        assert_eq!(output[99].im, 1.00053107738494873047);
     }
 
     #[test]
@@ -170,27 +243,27 @@ mod test {
 
         let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
         let filter = Filter::new(&taps);
-        let output = filter.filter(1, &input);
+        let output = filter.filter(20, &input);
 
         println!("TAPS: {}", taps.len());
 
         assert_eq!(output.len(), 5);
 
         // these were taken from running 100 (1.0, 1.0) numbers through the GNURadio low-pass filter
-        assert_eq!(output[0].re, 0.00000526322);
-        assert_eq!(output[0].im, 0.00000526322);
+        assert_eq!(output[0].re, 0.00000526320945937186);
+        assert_eq!(output[0].im, 0.00000526320945937186);
 
-        assert_eq!(output[1].re, -0.00015483372);
-        assert_eq!(output[1].im, -0.00015483372);
+        assert_eq!(output[1].re, -0.00015483508468605578);
+        assert_eq!(output[1].im, -0.00015483508468605578);
 
-        assert_eq!(output[2].re, -0.0005668219);
-        assert_eq!(output[2].im, -0.0005668219);
+        assert_eq!(output[2].re, -0.0005668227);
+        assert_eq!(output[2].im, -0.0005668227);
 
-        assert_eq!(output[3].re, -0.00065905956);
-        assert_eq!(output[3].im, -0.00065905956);
+        assert_eq!(output[3].re, -0.00065905834);
+        assert_eq!(output[3].im, -0.00065905834);
 
-        assert_eq!(output[4].re, -0.00025988425);
-        assert_eq!(output[4].im, -0.00025988425);
+        assert_eq!(output[4].re, -0.00025988230481743813);
+        assert_eq!(output[4].im, -0.00025988230481743813);
     }
 
     #[test]

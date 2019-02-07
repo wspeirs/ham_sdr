@@ -3,7 +3,8 @@ use std::f64::consts::PI;
 
 
 pub struct Filter {
-    taps: Vec<f32>
+    taps: Vec<f32>,
+    output: Vec<Complex32>  // we keep this around so we don't have to re-allocate every time
 }
 
 impl Filter {
@@ -69,15 +70,22 @@ impl Filter {
         return taps;
     }
 
+    /// Construct a new filter using taps.len() as the size for the output buffer
     pub fn new(taps: &[f32]) -> Filter {
+        Filter::with_capacity(taps, taps.len())
+    }
+
+    /// Construct a new filter using the given capacity for the output buffer
+    pub fn with_capacity(taps: &[f32], capacity: usize) -> Filter {
         let mut r_taps = Vec::<f32>::with_capacity(taps.len());
 
         // we want to reverse the taps so it's easier to manage in the filter code
         taps.iter().rev().for_each(|t| r_taps.push(*t));
 
-//        r_taps.extend_from_slice(taps);
-
-        return Filter { taps: r_taps }
+        Filter {
+            taps: r_taps,
+            output: vec![Complex32::new(0.0, 0.0); capacity]
+        }
     }
 
     fn dot_product(input: &[Complex32], taps: &[f32]) -> Complex32 {
@@ -92,21 +100,29 @@ impl Filter {
         return Complex32::new(r,i);
     }
 
-    pub fn filter(&self, decimation: usize, input: &[Complex32]) -> Vec<Complex32> {
-        let mut ret = Vec::<Complex32>::with_capacity(input.len());
-
+    pub fn filter(&mut self, decimation: usize, input: &[Complex32]) -> &[Complex32] {
         let stop = (input.len() / decimation) * decimation;
 
+        // ensure we have enough space in our internal buffer for the result
+        if self.output.len() < stop {
+            println!("REALLOC: {} -> {}", self.output.len(), stop);
+            self.output.resize(stop, Complex32::new(0.0, 0.0));
+        }
+
+        let mut output_index = 0;
+
+        // compute the convolution
         for n in (0..stop).step_by(decimation) {
             let i_start = if n >= self.taps.len() { n - (self.taps.len()-1) } else { 0 };
-            let t_start = (self.taps.len()-1) - n;
+            let t_start = if n >= self.taps.len()-1 { 0 } else { (self.taps.len()-1) - n};
 
             let c = Filter::dot_product(&input[i_start..=n], &self.taps[t_start..]);
 
-            ret.push(c);
+            self.output[output_index] = c;
+            output_index += 1;
         }
 
-        ret
+        &self.output[0..output_index]
     }
 }
 
@@ -163,7 +179,7 @@ mod test {
         }
 
         let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
-        let filter = Filter::new(&taps);
+        let mut filter = Filter::new(&taps);
         let output = filter.filter(20, &input);
 
 //        assert_eq!(output.len(), 100);
@@ -207,7 +223,7 @@ mod test {
 
         let input = vec![Complex32::new(1.0, 1.0); 100];
         let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
-        let filter = Filter::new(&taps);
+        let mut filter = Filter::new(&taps);
         let output = filter.filter(1, &input);
 
         assert_eq!(output.len(), 100);
@@ -242,7 +258,7 @@ mod test {
         let input = vec![Complex32::new(1.0, 1.0); 100];
 
         let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
-        let filter = Filter::new(&taps);
+        let mut filter = Filter::new(&taps);
         let output = filter.filter(20, &input);
 
         println!("TAPS: {}", taps.len());
@@ -271,7 +287,7 @@ mod test {
         let input = vec![Complex32::new(1.0, 1.0); 2500];
 
         let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
-        let filter = Filter::new(&taps);
+        let mut filter = Filter::new(&taps);
         let output = filter.filter(1, &input);
 
         println!("TAPS: {}", taps.len());
@@ -312,7 +328,7 @@ mod test {
         let input = vec![Complex32::new(1.0, 1.0); 2500];
 
         let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
-        let filter = Filter::new(&taps);
+        let mut filter = Filter::new(&taps);
         let output = filter.filter(1, &input);
 
         println!("COMPUTED OUT LEN: {}", input.len() / 103);

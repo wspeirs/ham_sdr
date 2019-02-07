@@ -50,10 +50,11 @@ fn main() -> Result<(), Error> {
 
 //    let mut fm_demod = QuadratureDemodulator::new();
     let taps = Filter::generate_low_pass_taps(1.0, 10e6, 100e3, 10e3);
-    let filter = Filter::new(&taps);
+    let mut filter = Filter::with_capacity(&taps, 131_100);
 
+    // test for reading from file
     loop {
-        let mut iq = Vec::<Complex32>::with_capacity(22_000);
+        let mut iq = Vec::<Complex32>::with_capacity(131_072);
 
         for _ in 0..131_072 {
             let r = iq_file.read_f32::<LE>().unwrap();
@@ -83,7 +84,7 @@ fn main() -> Result<(), Error> {
         //
         // low-pass filter, and decimation
         //
-        let output = QuadratureDemodulator::fir_filter(iq, &taps, 20);
+        let output = filter.filter(20, iq);
 
         output.iter().for_each(|c| {
             test_file.write_f32::<LE>(c.re);
@@ -101,14 +102,6 @@ fn main() -> Result<(), Error> {
 //
 //        test_file.flush();
 
-        // re-sample
-//        let res = resample_fir.process(&res);
-//
-//        res.iter().for_each(|r| {
-//            test_file.write_f32::<LE>(*r);
-//        });
-//        test_file.flush();
-
         Error::SUCCESS
     })?;
 
@@ -116,8 +109,8 @@ fn main() -> Result<(), Error> {
     dev.stop_rx();
     sleep(Duration::from_millis(10));
 
-    test_file.flush();
 */
+    test_file.flush();
     Ok(())
 }
 

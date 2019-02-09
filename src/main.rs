@@ -27,7 +27,7 @@ const FREQ :u64 = 95_900_000; // set to 95.9MHz
 const SAMPLE_RATE :f64 = 10_000_000.0;
 
 fn main() -> Result<(), Error> {
-//    simple_logger::init_with_level(log::Level::Debug).unwrap();
+    simple_logger::init_with_level(log::Level::Debug).unwrap();
 //    simple_logger::init_with_level(log::Level::Info).unwrap();
 
     let mut hrf = HackRF::new().unwrap();
@@ -120,19 +120,25 @@ mod test {
     use super::*;
     use std::io::BufReader;
     use byteorder::{LE, ReadBytesExt};
+    use std::sync::{Once, ONCE_INIT};
+
+    static LOGGER_INIT: Once = ONCE_INIT;
 
     #[test]
     fn test_read() {
+        LOGGER_INIT.call_once(|| simple_logger::init_with_level(log::Level::Debug).unwrap()); // this will panic on error
+
         let mut my_file = BufReader::new(OpenOptions::new().read(true).create(false).open("test.dat").expect("Cannot open phase file"));
         let mut gr_file = BufReader::new(OpenOptions::new().read(true).create(false).open("gnu_radio.dat").expect("Cannot open phase file"));
 
         for _ in 0..100 {
-            println!("{:0.04} {:0.04}\t\t{:0.04} {:0.04}", my_file.read_f32::<LE>().unwrap(), my_file.read_f32::<LE>().unwrap(), gr_file.read_f32::<LE>().unwrap(), gr_file.read_f32::<LE>().unwrap());
+            debug!("{:0.04} {:0.04}\t\t{:0.04} {:0.04}", my_file.read_f32::<LE>().unwrap(), my_file.read_f32::<LE>().unwrap(), gr_file.read_f32::<LE>().unwrap(), gr_file.read_f32::<LE>().unwrap());
         }
     }
 
     #[test]
     fn test_lut() {
+        LOGGER_INIT.call_once(|| simple_logger::init_with_level(log::Level::Debug).unwrap()); // this will panic on error
         let buff :Vec<u8> = vec![0x00, 0x01, 0x02, 0x03];
 
         for i in buff.chunks(2) {
@@ -141,7 +147,7 @@ mod test {
             s <<= 8;
             s += i[0] as u16;
 
-            println!("{:x}", s);
+            debug!("{:x}", s);
         }
 
     }

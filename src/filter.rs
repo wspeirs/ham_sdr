@@ -5,7 +5,7 @@ use std::ptr::null_mut;
 use std::alloc::{System, GlobalAlloc, Layout};
 use std::time::{Duration, Instant};
 
-use core::arch::x86_64::{__m256, _mm256_setzero_ps, _mm256_load_ps, _mm256_unpacklo_ps, _mm256_unpackhi_ps, _mm256_permute2f128_ps, _mm256_mul_ps, _mm256_add_ps, _mm256_store_ps};
+use core::arch::x86_64::{__m256, _mm256_setzero_ps, _mm256_loadu_ps, _mm256_unpacklo_ps, _mm256_unpackhi_ps, _mm256_permute2f128_ps, _mm256_mul_ps, _mm256_add_ps, _mm256_storeu_ps};
 
 pub struct Filter {
     taps: Vec<f32>,
@@ -117,32 +117,12 @@ impl Filter {
         let mut real_ptr :*mut f32 = &mut real as *mut f32;
         let mut imag_ptr :*mut f32 = &mut imag as *mut f32;
 
-        // convert our array of Complex values into floats, aligned to a 32-byte boundary
-        let a_layout = Layout::from_size_align(4 * a.len() * 2, 32).unwrap();
-        let a_mem = System.alloc(a_layout);
-        let a_ptr :*mut f32 = a_mem as *mut f32;
+        // convert our array of Complex values into floats
+        let mut a_f32_vec = Vec::with_capacity(a.len()*2);
+        a.into_iter().for_each(|c| { a_f32_vec.push(c.re); a_f32_vec.push(c.im); });
 
-        for i in (0..a.len() as isize) {
-            *a_ptr.offset((i*2)) = a[i as usize].re;
-            *a_ptr.offset((i*2)+1) = a[i as usize].im;
-        }
-
-        // make sure our pointer is on a 32-byte boundary
-        let (b_layout, b_mem, b_ptr) = if transmute::<*const f32, usize>(b.as_ptr()) as usize % 32 != 0 {
-            trace!("ALLOCATING FOR B_PTR");
-
-            let b_layout = Layout::from_size_align(4 * b.len(), 32).unwrap();
-            let b_mem = System.alloc(b_layout);
-            let b_ptr :*mut f32 = b_mem as *mut f32;
-
-            for i in (0..b.len() as isize) {
-                *b_ptr.offset(i) = b[i as usize];
-            }
-
-            (b_layout, b_mem, b_ptr as *const f32)
-        } else {
-            (Layout::new::<f32>(), null_mut(), b.as_ptr())
-        };
+        let a_ptr :*const f32 = a_f32_vec.as_ptr();
+        let b_ptr :*const f32 = b.as_ptr();
 
         let (mut a0_val, mut a1_val, mut a2_val, mut a3_val) :(__m256, __m256, __m256, __m256);
         let (mut b0_val, mut b1_val, mut b2_val, mut b3_val) :(__m256, __m256, __m256, __m256);
@@ -162,13 +142,13 @@ impl Filter {
         while a_offset < ((a.len() as isize * 2) / 32) * 32 {
             trace!("1st loop a_offset: {}\tb_offset: {}", a_offset, b_offset);
 
-            a0_val = _mm256_load_ps(a_ptr.offset(a_offset));
-            a1_val = _mm256_load_ps(a_ptr.offset(a_offset + 8));
-            a2_val = _mm256_load_ps(a_ptr.offset(a_offset + 16));
-            a3_val = _mm256_load_ps(a_ptr.offset(a_offset + 24));
+            a0_val = _mm256_loadu_ps(a_ptr.offset(a_offset));
+            a1_val = _mm256_loadu_ps(a_ptr.offset(a_offset + 8));
+            a2_val = _mm256_loadu_ps(a_ptr.offset(a_offset + 16));
+            a3_val = _mm256_loadu_ps(a_ptr.offset(a_offset + 24));
 
-            x0_val = _mm256_load_ps(b_ptr.offset(b_offset)); // t0|t1|t2|t3|t4|t5|t6|t7
-            x1_val = _mm256_load_ps(b_ptr.offset(b_offset + 8));
+            x0_val = _mm256_loadu_ps(b_ptr.offset(b_offset)); // t0|t1|t2|t3|t4|t5|t6|t7
+            x1_val = _mm256_loadu_ps(b_ptr.offset(b_offset + 8));
 
             x0_low_val = _mm256_unpacklo_ps(x0_val, x0_val); // t0|t0|t1|t1|t4|t4|t5|t5
             x0_high_val = _mm256_unpackhi_ps(x0_val, x0_val); // t2|t2|t3|t3|t6|t6|t7|t7
@@ -200,21 +180,20 @@ impl Filter {
         dot_prod0_val = _mm256_add_ps(dot_prod0_val, dot_prod3_val);
 
         // create a layout for our vec![0.0_f32; 8] properly aligned
-        let dp_layout = Layout::from_size_align(32, 32).unwrap();
-        let dp_mem = System.alloc(dp_layout);
-        let dot_prod_vec_ptr :*const f32 = dp_mem as *const f32;
+        let mut dp = vec![0_f32; 8];
+        let dp_ptr = dp.as_mut_ptr();
 
         // Store the results back into the dot product vector
-        _mm256_store_ps(dot_prod_vec_ptr,dot_prod0_val);
+        _mm256_storeu_ps(dp_ptr,dot_prod0_val);
 
-        *real_ptr = *dot_prod_vec_ptr.offset(0);
-        *imag_ptr = *dot_prod_vec_ptr.offset(1);
-        *real_ptr += *dot_prod_vec_ptr.offset(2);
-        *imag_ptr += *dot_prod_vec_ptr.offset(3);
-        *real_ptr += *dot_prod_vec_ptr.offset(4);
-        *imag_ptr += *dot_prod_vec_ptr.offset(5);
-        *real_ptr += *dot_prod_vec_ptr.offset(6);
-        *imag_ptr += *dot_prod_vec_ptr.offset(7);
+        *real_ptr = *dp_ptr.offset(0);
+        *imag_ptr = *dp_ptr.offset(1);
+        *real_ptr += *dp_ptr.offset(2);
+        *imag_ptr += *dp_ptr.offset(3);
+        *real_ptr += *dp_ptr.offset(4);
+        *imag_ptr += *dp_ptr.offset(5);
+        *real_ptr += *dp_ptr.offset(6);
+        *imag_ptr += *dp_ptr.offset(7);
 
         trace!("re: {} im: {}", *real_ptr, *imag_ptr);
 
@@ -228,15 +207,6 @@ impl Filter {
 
             a_offset += 2;
             b_offset += 1;
-        }
-
-        // deallocate our memory
-        System.dealloc(dp_mem, dp_layout); // have to deallocate this memory when we're done
-        System.dealloc(a_mem, a_layout);
-
-        if !b_mem.is_null() {
-            trace!("FREEING B_PTR");
-            System.dealloc(b_ptr as *mut u8, b_layout);
         }
 
         Complex32::new(*real_ptr, *imag_ptr)
@@ -268,7 +238,8 @@ impl Filter {
 //                Filter::dot_product(&input[i_start..=n], &self.taps[t_start..])
 //            };
 
-            let c = Filter::dot_product(&input[i_start..=n], &self.taps[t_start..]);
+            let c = unsafe { Filter::dot_product_avx(&input[i_start..=n], &self.taps[t_start..]) };
+//            let c = Filter::dot_product(&input[i_start..=n], &self.taps[t_start..]);
 
             self.output[output_index] = c;
             output_index += 1;

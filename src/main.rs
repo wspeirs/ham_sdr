@@ -12,8 +12,6 @@ use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 
 use std::f32::consts::PI;
 
-use num::complex::Complex32;
-
 use rs_libhackrf::hackrf::HackRF;
 use rs_libhackrf::error::Error;
 
@@ -54,20 +52,18 @@ fn main() -> Result<(), Error> {
 
     // test for reading from file
     loop {
-        let mut iq = Vec::<Complex32>::with_capacity(131_072);
+        let mut iq = Vec::<f32>::with_capacity(262_144);
 
-        for _ in 0..131_072 {
-            let r = iq_file.read_f32::<LE>().unwrap();
-            let i = iq_file.read_f32::<LE>().unwrap();
-
-            iq.push(Complex32::new(r, i));
+        for _ in 0..262_144 {
+            iq.push(iq_file.read_f32::<LE>().unwrap());
         }
 
         let output = filter.filter(20, &iq);
 
-        output.iter().for_each(|c| {
-            test_file.write_f32::<LE>(c.re);
-            test_file.write_f32::<LE>(c.im);
+        assert_eq!(output.len()%2, 0, "Output not event");
+
+        output.iter().for_each(|f| {
+            test_file.write_f32::<LE>(*f);
         });
 
         test_file.flush();

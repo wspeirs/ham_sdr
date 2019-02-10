@@ -5,10 +5,11 @@ authors = ["William Speirs <bill.speirs@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+byteorder = "1.3"
 log = "0.4"
 simple_logger = "1.0"
 num = "0.2"
-byteorder = "1.3"
+rayon = "1.0"
 
 rs-libhackrf = { path = "/home/wspeirs/src/rs-libhackrf" }
 

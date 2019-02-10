@@ -244,7 +244,7 @@ impl Filter {
         let taps = &self.taps;
         let use_avx = self.use_avx;
 
-        self.output.extend(n_vals.into_iter().flat_map(|n| {
+        self.output.par_extend(n_vals.into_par_iter().flat_map(|n| {
             let i_start = if (n/2) >= taps.len() { n - (2 * (taps.len()-1)) } else { 0 };
             let t_start = if (n/2) >= taps.len()-1 { 0 } else { (taps.len()-1) - (n/2)};
 

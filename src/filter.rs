@@ -239,43 +239,26 @@ impl Filter {
         // reset the length of the buffer so we can push elements into it
         unsafe { self.output.set_len(0); }
 
-//        let n_vals = (0..stop).step_by(decimation).collect::<Vec<_>>();
-//
-//        // get around immutable & mutable self borrows
-//        let taps = &self.taps;
-//        let use_avx = self.use_avx;
-//
-//        self.output.par_extend(n_vals.par_iter().map(|n| {
-//            let i_start = if *n >= taps.len() { *n - (taps.len()-1) } else { 0 };
-//            let t_start = if *n >= taps.len()-1 { 0 } else { (taps.len()-1) - *n};
-//
-//            if use_avx {
-//                unsafe { Filter::dot_product_avx(&input[i_start..=*n], &taps[t_start..]) }
-//            } else {
-//                Filter::dot_product(&input[i_start..=*n], &taps[t_start..])
-//            }
-//        }));
+        let n_vals = (0..stop).step_by(decimation).collect::<Vec<_>>();
 
-        // compute the convolution
-        for n in (0..stop).step_by(decimation) {
-            let i_start = if n >= self.taps.len() { n - (self.taps.len()-1) } else { 0 };
-            let t_start = if n >= self.taps.len()-1 { 0 } else { (self.taps.len()-1) - n};
+        // get around immutable & mutable self borrows
+        let taps = &self.taps;
+        let use_avx = self.use_avx;
 
-//            let c = if self.use_avx {
-//                unsafe { Filter::dot_product_avx(&input[i_start..=n], &self.taps[t_start..]) }
-//            } else {
-//                Filter::dot_product(&input[i_start..=n], &self.taps[t_start..])
-//            };
+        self.output.par_extend(n_vals.par_iter().map(|n| {
+            let i_start = if *n >= taps.len() { *n - (taps.len()-1) } else { 0 };
+            let t_start = if *n >= taps.len()-1 { 0 } else { (taps.len()-1) - *n};
 
-//            let c = unsafe { Filter::dot_product_avx(&input[i_start..=n], &self.taps[t_start..]) };
-            let c = Filter::dot_product(&input[i_start..=n], &self.taps[t_start..]);
-
-            self.output.push(c);
-        }
+            if use_avx {
+                unsafe { Filter::dot_product_avx(&input[i_start..=*n], &taps[t_start..]) }
+            } else {
+                Filter::dot_product(&input[i_start..=*n], &taps[t_start..])
+            }
+        }));
 
         let end_time = start_time.elapsed();
 
-        info!("FILTER TOOK: {}ms", end_time.as_secs()*1_000 + end_time.subsec_nanos() as u64 / 1_000_000);
+        debug!("FILTER TOOK: {}ms", end_time.as_secs()*1_000 + end_time.subsec_nanos() as u64 / 1_000_000);
 
         self.output.as_slice()
     }

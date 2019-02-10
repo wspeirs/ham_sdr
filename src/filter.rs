@@ -1,4 +1,3 @@
-use num::complex::{Complex32, Complex64};
 use std::f64::consts::PI;
 use std::mem::transmute;
 use std::ptr::null_mut;
@@ -7,9 +6,14 @@ use std::time::{Duration, Instant};
 
 use core::arch::x86_64::{__m256, _mm256_setzero_ps, _mm256_loadu_ps, _mm256_unpacklo_ps, _mm256_unpackhi_ps, _mm256_permute2f128_ps, _mm256_mul_ps, _mm256_add_ps, _mm256_storeu_ps};
 
+use num::complex::{Complex32, Complex64};
+use rayon::prelude::*;
+
+
 pub struct Filter {
     taps: Vec<f32>,
-    output: Vec<Complex32>  // we keep this around so we don't have to re-allocate every time
+    output: Vec<Complex32>,  // we keep this around so we don't have to re-allocate every time
+    use_avx: bool
 }
 
 impl Filter {
@@ -87,9 +91,14 @@ impl Filter {
         // we want to reverse the taps so it's easier to manage in the filter code
         taps.iter().rev().for_each(|t| r_taps.push(*t));
 
+        let use_avx = is_x86_feature_detected!("avx");
+
+        debug!("USING {}", if use_avx {"AVX"} else {"GENERIC"});
+
         Filter {
             taps: r_taps,
-            output: vec![Complex32::new(0.0, 0.0); capacity]
+            output: vec![Complex32::new(0.0, 0.0); capacity],
+            use_avx: use_avx
         }
     }
 
@@ -108,6 +117,7 @@ impl Filter {
     }
 
     #[inline]
+    #[target_feature(enable = "avx2")]
     unsafe fn dot_product_avx(a: &[Complex32], b: &[f32]) -> Complex32 {
         assert_eq!(a.len(), b.len());
 
@@ -139,7 +149,7 @@ impl Filter {
 
         let a_len_mul32 = ((a.len() as isize * 2) / 32) * 32;
 
-        while a_offset < ((a.len() as isize * 2) / 32) * 32 {
+        while a_offset < a_len_mul32 {
             trace!("1st loop a_offset: {}\tb_offset: {}", a_offset, b_offset);
 
             a0_val = _mm256_loadu_ps(a_ptr.offset(a_offset));
@@ -178,6 +188,8 @@ impl Filter {
         dot_prod0_val = _mm256_add_ps(dot_prod0_val, dot_prod1_val);
         dot_prod0_val = _mm256_add_ps(dot_prod0_val, dot_prod2_val);
         dot_prod0_val = _mm256_add_ps(dot_prod0_val, dot_prod3_val);
+
+        trace!("DP VAL: {:?}", dot_prod0_val);
 
         // create a layout for our vec![0.0_f32; 8] properly aligned
         let mut dp = vec![0_f32; 8];
@@ -218,38 +230,54 @@ impl Filter {
         let stop = (input.len() / decimation) * decimation;
 
         // ensure we have enough space in our internal buffer for the result
-        if self.output.len() < stop {
-            debug!("REALLOC: {} -> {}", self.output.len(), stop);
-            self.output.resize(stop, Complex32::new(0.0, 0.0));
+        if self.output.capacity() < stop {
+            debug!("REALLOC: {} -> {}", self.output.capacity(), stop);
+            let additional_capacity = stop - self.output.capacity() + 1;
+            self.output.reserve(additional_capacity);
         }
 
-        let mut output_index = 0;
+        // reset the length of the buffer so we can push elements into it
+        unsafe { self.output.set_len(0); }
 
-        debug!("USING {}", if is_x86_feature_detected!("avx") {"AVX"} else {"GENERIC"});
+//        let n_vals = (0..stop).step_by(decimation).collect::<Vec<_>>();
+//
+//        // get around immutable & mutable self borrows
+//        let taps = &self.taps;
+//        let use_avx = self.use_avx;
+//
+//        self.output.par_extend(n_vals.par_iter().map(|n| {
+//            let i_start = if *n >= taps.len() { *n - (taps.len()-1) } else { 0 };
+//            let t_start = if *n >= taps.len()-1 { 0 } else { (taps.len()-1) - *n};
+//
+//            if use_avx {
+//                unsafe { Filter::dot_product_avx(&input[i_start..=*n], &taps[t_start..]) }
+//            } else {
+//                Filter::dot_product(&input[i_start..=*n], &taps[t_start..])
+//            }
+//        }));
 
         // compute the convolution
         for n in (0..stop).step_by(decimation) {
             let i_start = if n >= self.taps.len() { n - (self.taps.len()-1) } else { 0 };
             let t_start = if n >= self.taps.len()-1 { 0 } else { (self.taps.len()-1) - n};
 
-//            let c = if is_x86_feature_detected!("avx") {
+//            let c = if self.use_avx {
 //                unsafe { Filter::dot_product_avx(&input[i_start..=n], &self.taps[t_start..]) }
 //            } else {
 //                Filter::dot_product(&input[i_start..=n], &self.taps[t_start..])
 //            };
 
-            let c = unsafe { Filter::dot_product_avx(&input[i_start..=n], &self.taps[t_start..]) };
-//            let c = Filter::dot_product(&input[i_start..=n], &self.taps[t_start..]);
+//            let c = unsafe { Filter::dot_product_avx(&input[i_start..=n], &self.taps[t_start..]) };
+            let c = Filter::dot_product(&input[i_start..=n], &self.taps[t_start..]);
 
-            self.output[output_index] = c;
-            output_index += 1;
+            self.output.push(c);
         }
 
         let end_time = start_time.elapsed();
 
         info!("FILTER TOOK: {}ms", end_time.as_secs()*1_000 + end_time.subsec_nanos() as u64 / 1_000_000);
 
-        &self.output[0..output_index]
+        self.output.as_slice()
     }
 }
 
@@ -266,23 +294,22 @@ mod test {
     static LOGGER_INIT: Once = ONCE_INIT;
 
     fn dot_product(len :usize) {
-        LOGGER_INIT.call_once(|| simple_logger::init_with_level(log::Level::Debug).unwrap()); // this will panic on error
-
         let a = vec![Complex32::new(1.9, 2.8); len];
         let b = vec![4.6; len];
 
         let res_generic = Filter::dot_product(&a, &b);
         let res_avx = unsafe { Filter::dot_product_avx(&a, &b) };
 
-        dbg!(res_generic);
-        dbg!(res_avx);
+        debug!("{:02}: Generic: {:?}\tAVX: {:?}", len, res_generic, res_avx);
 
-        assert!((res_generic.re - res_avx.re).abs() < 0.1);
-        assert!((res_generic.im - res_avx.im).abs() < 0.1);
+        assert!((res_generic.re - res_avx.re).abs() < 0.1, "Real value difference too high for {}", len);
+        assert!((res_generic.im - res_avx.im).abs() < 0.1, "Imag value difference too high for {}", len);
     }
 
     #[test]
     fn dot_product_avx() {
+        LOGGER_INIT.call_once(|| simple_logger::init_with_level(log::Level::Trace).unwrap()); // this will panic on error
+
         // test a bunch of different sizes
         for i in 1..65 {
             dot_product(i);
